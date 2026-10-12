@@ -23,6 +23,14 @@
   var heatGridEl = document.getElementById('heat-grid');
   var heatScaleLabelEl = document.getElementById('heat-scale-label');
   var heatDetailEl = document.getElementById('heat-detail');
+  var fixedToggleBtn = document.getElementById('fixed-toggle');
+  var fixedBannerEl = document.getElementById('fixed-banner');
+  var fixedDoneBtn = document.getElementById('fixed-done');
+  var fixedStatusEl = document.getElementById('fixed-status');
+  var mineHintEl = document.getElementById('mine-hint');
+  var mineLegendEl = document.getElementById('mine-legend');
+  var weekPrevBtn = document.getElementById('week-prev');
+  var weekNextBtn = document.getElementById('week-next');
 
   // 기본 범위: 평일 9~23시, 30분 단위 (설정은 5단계에서 추가)
   var DAYS = [
@@ -41,11 +49,16 @@
   //   name: "홍길동",
   //   weeks: { "2026-10-12": ["mon-09:00", ...] },          내 주별 가능시간
   //   team:  { "2026-10-12": { "김팀원": ["mon-09:00", ...] } } 붙여넣은 팀원 코드 (주별, 이름별)
+  //   fixed: ["tue-10:00", ...],                              고정 시간 본체 (매주 반복되는 불가 시간)
+  //   weekFixed: { "2026-10-12": ["tue-10:00", ...] },        그 주에 처음 입력할 때 복사해 둔 고정 시간
+  //   released:  { "2026-10-12": ["tue-10:00", ...] }         그 주에만 푼 고정 칸 (= 그 주만 가능)
   // }
+  // 고정 시간 적용(B안): 입력이 없는 주는 현재 고정 시간을 보여주고, 그 주에 처음 입력하는 순간
+  // 고정 시간을 weekFixed에 복사한다. 이후 고정 시간 본체를 바꿔도 이미 입력한 주는 바뀌지 않는다.
   // 슬롯은 칸 번호가 아니라 요일+시각으로 저장한다. 시간 범위가 바뀌어도 데이터가 유지되게 하기 위해서다.
 
   function emptyState() {
-    return { weeks: {}, team: {} };
+    return { weeks: {}, team: {}, fixed: [], weekFixed: {}, released: {} };
   }
 
   function loadState() {
@@ -56,12 +69,19 @@
       if (!parsed || typeof parsed !== 'object' || !parsed.weeks || typeof parsed.weeks !== 'object') {
         return emptyState();
       }
-      if (!parsed.team || typeof parsed.team !== 'object' || Array.isArray(parsed.team)) parsed.team = {};
+      if (!isPlainObject(parsed.team)) parsed.team = {};
+      if (!Array.isArray(parsed.fixed)) parsed.fixed = [];
+      if (!isPlainObject(parsed.weekFixed)) parsed.weekFixed = {};
+      if (!isPlainObject(parsed.released)) parsed.released = {};
       return parsed;
     } catch (e) {
       showNotice('저장된 데이터를 읽지 못했습니다. 빈 상태로 시작합니다.');
       return emptyState();
     }
+  }
+
+  function isPlainObject(v) {
+    return !!v && typeof v === 'object' && !Array.isArray(v);
   }
 
   function saveState() {
@@ -121,34 +141,84 @@
 
   var state = loadState();
   var currentMonday = mondayOf(new Date());
-  var selected = {}; // 현재 주의 가능 슬롯 집합
+  var selected = {};  // 현재 주에 칠한 가능 슬롯 집합
+  var weekFixed = {};  // 현재 주에 적용되는 고정 칸 집합
+  var released = {};   // 현재 주에만 푼 고정 칸 집합
+  var editingFixed = false;
 
   function currentWeekKey() {
     return weekKeyOf(currentMonday);
   }
 
-  function loadWeek() {
-    selected = {};
-    var slots = state.weeks[currentWeekKey()];
-    if (Array.isArray(slots)) {
-      slots.forEach(function (id) {
-        if (typeof id === 'string') selected[id] = true;
+  function stringSet(list) {
+    var set = {};
+    if (Array.isArray(list)) {
+      list.forEach(function (id) {
+        if (typeof id === 'string') set[id] = true;
       });
     }
+    return set;
   }
 
-  function saveWeek() {
-    // 격자 순서대로 정렬해서 저장한다. 현재 범위 밖의 슬롯도 지우지 않고 남긴다.
-    var prev = state.weeks[currentWeekKey()];
-    var outside = Array.isArray(prev) ? prev.filter(function (id) { return !isInGrid(id); }) : [];
+  // 입력이 있는 주 = 칠하기나 풀기를 한 번이라도 한 주
+  function hasInput(weekKey) {
+    return Array.isArray(state.weeks[weekKey]) || Array.isArray(state.weekFixed[weekKey]);
+  }
+
+  function fixedListFor(weekKey) {
+    if (Array.isArray(state.weekFixed[weekKey])) return state.weekFixed[weekKey];
+    // 고정 시간 기능 이전에 입력한 주는 고정 시간 없이 시작한 주로 본다.
+    if (Array.isArray(state.weeks[weekKey])) return [];
+    return state.fixed;
+  }
+
+  // 공유 코드와 팀 겹침에 쓰는 실제 가능 슬롯 = 칠한 칸(고정 칸 제외) + 그 주에 푼 고정 칸
+  function effectiveSlots(weekKey) {
+    var fixedSet = stringSet(fixedListFor(weekKey));
+    var rel = stringSet(state.released[weekKey]);
+    var mine = Array.isArray(state.weeks[weekKey]) ? state.weeks[weekKey] : [];
+    var result = {};
+    mine.forEach(function (id) {
+      if (typeof id === 'string' && !fixedSet[id]) result[id] = true;
+    });
+    Object.keys(rel).forEach(function (id) {
+      if (fixedSet[id]) result[id] = true;
+    });
+    return sortSlots(Object.keys(result));
+  }
+
+  function loadWeek() {
+    var key = currentWeekKey();
+    selected = stringSet(state.weeks[key]);
+    weekFixed = stringSet(fixedListFor(key));
+    released = stringSet(state.released[key]);
+  }
+
+  // 격자 순서대로 정렬한다. 현재 범위 밖의 슬롯은 지우지 않고 뒤에 남긴다.
+  function sortSlots(list) {
+    var set = stringSet(list);
     var inside = [];
     DAYS.forEach(function (day) {
       TIMES.forEach(function (t) {
         var id = slotId(day.key, t);
-        if (selected[id]) inside.push(id);
+        if (set[id]) inside.push(id);
       });
     });
-    state.weeks[currentWeekKey()] = inside.concat(outside);
+    var outside = Object.keys(set).filter(function (id) { return !isInGrid(id); }).sort();
+    return inside.concat(outside);
+  }
+
+  function saveWeek() {
+    var key = currentWeekKey();
+    // 처음 입력하는 주라면 지금 보이는 고정 시간을 이 주에 복사해 둔다.
+    if (!Array.isArray(state.weekFixed[key])) state.weekFixed[key] = sortSlots(Object.keys(weekFixed));
+    state.weeks[key] = sortSlots(Object.keys(selected));
+    state.released[key] = sortSlots(Object.keys(released));
+    saveState();
+  }
+
+  function saveFixed() {
+    state.fixed = sortSlots(Object.keys(weekFixed));
     saveState();
   }
 
@@ -218,10 +288,27 @@
     });
   }
 
+  function cellState(id) {
+    if (editingFixed) return weekFixed[id] ? 'fixed' : 'off';
+    if (weekFixed[id]) return released[id] ? 'released' : 'fixed';
+    return selected[id] ? 'on' : 'off';
+  }
+
+  var STATE_TEXT = { on: '가능', off: '불가', fixed: '고정 불가', released: '이번 주만 가능' };
+
+  function paintCell(cell) {
+    var st = cellState(cell.dataset.slot);
+    cell.classList.toggle('on', st === 'on');
+    cell.classList.toggle('fixed', st === 'fixed');
+    cell.classList.toggle('released', st === 'released');
+    cell.setAttribute('aria-selected', st === 'on' || st === 'released' ? 'true' : 'false');
+    cell.title = STATE_TEXT[st];
+  }
+
   function renderGrid() {
-    buildGrid(gridEl, function (cell, id) {
-      if (selected[id]) cell.classList.add('on');
-      cell.setAttribute('aria-selected', selected[id] ? 'true' : 'false');
+    gridEl.classList.toggle('editing-fixed', editingFixed);
+    buildGrid(gridEl, function (cell) {
+      paintCell(cell);
     });
   }
 
@@ -232,19 +319,29 @@
   }
 
   // ---- 드래그 칠하기 (마우스·터치 공통, Pointer Events) ----
-  // 처음 누른 칸이 비어 있으면 칠하기, 칠해져 있으면 지우기로 드래그 내내 고정한다.
+  // 처음 누른 칸으로 드래그 동작을 정하고, 드래그 내내 같은 동작만 한다.
+  //   고정 편집 모드: 고정 칸 칠하기 / 지우기
+  //   일반 모드, 빈 칸·칠한 칸에서 시작: 칠하기 / 지우기 (고정 칸은 건너뜀)
+  //   일반 모드, 고정 칸에서 시작: 이번 주만 풀기 (고정 칸에만 적용)
+  //   일반 모드, 푼 칸에서 시작: 다시 고정으로 되돌리기 (푼 칸에만 적용)
 
-  var drag = null; // { paint: boolean, changed: boolean }
+  var drag = null; // { set: 바꿀 집합, value: 넣기(true)/빼기(false), onlyFixed: boolean|null, changed: boolean }
+
+  function startDrag(id) {
+    if (editingFixed) return { set: weekFixed, value: !weekFixed[id], onlyFixed: null, changed: false };
+    if (weekFixed[id]) return { set: released, value: !released[id], onlyFixed: true, changed: false };
+    return { set: selected, value: !selected[id], onlyFixed: false, changed: false };
+  }
 
   function applyToCell(cell) {
     if (!cell || !cell.dataset || !cell.dataset.slot) return;
     var id = cell.dataset.slot;
-    var has = selected[id] === true;
-    if (has === drag.paint) return;
-    if (drag.paint) selected[id] = true;
-    else delete selected[id];
-    cell.classList.toggle('on', drag.paint);
-    cell.setAttribute('aria-selected', drag.paint ? 'true' : 'false');
+    if (drag.onlyFixed === true && !weekFixed[id]) return;
+    if (drag.onlyFixed === false && weekFixed[id]) return;
+    if ((drag.set[id] === true) === drag.value) return;
+    if (drag.value) drag.set[id] = true;
+    else delete drag.set[id];
+    paintCell(cell);
     drag.changed = true;
   }
 
@@ -259,7 +356,7 @@
     if (!cell) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
-    drag = { paint: selected[cell.dataset.slot] !== true, changed: false };
+    drag = startDrag(cell.dataset.slot);
     applyToCell(cell);
   });
 
@@ -272,11 +369,14 @@
     if (!drag) return;
     var changed = drag.changed;
     drag = null;
-    if (changed) {
-      saveWeek();
-      clearShareOutput();
-      renderTeam();
+    if (!changed) return;
+    if (editingFixed) {
+      saveFixed();
+      return;
     }
+    saveWeek();
+    clearShareOutput();
+    renderTeam();
   }
 
   document.addEventListener('pointerup', endDrag);
@@ -294,11 +394,10 @@
   }
 
   function buildMyCode(name) {
-    var slots = state.weeks[currentWeekKey()];
     return encodeShareCode({
       name: name,
       week: currentWeekKey(),
-      slots: Array.isArray(slots) ? slots.slice() : []
+      slots: effectiveSlots(currentWeekKey())
     });
   }
 
@@ -372,7 +471,7 @@
 
     shareCodeEl.value = code;
     shareCodeEl.hidden = false;
-    var count = (state.weeks[currentWeekKey()] || []).length;
+    var count = effectiveSlots(currentWeekKey()).length;
     var weekText = weekLabelEl.textContent;
 
     copyText(code).then(function () {
@@ -503,8 +602,7 @@
 
   function teamMembers() {
     var members = [];
-    var mine = state.weeks[currentWeekKey()];
-    members.push({ name: myName() || '나', me: true, slots: toSet(Array.isArray(mine) ? mine : []) });
+    members.push({ name: myName() || '나', me: true, slots: toSet(effectiveSlots(currentWeekKey())) });
     var team = teamOfWeek();
     Object.keys(team).sort(function (a, b) { return a.localeCompare(b, 'ko'); }).forEach(function (name) {
       if (name === myName()) return;
@@ -614,10 +712,53 @@
     if (cell) showHeatDetail(cell);
   });
 
+  // ---- 고정 시간 편집 모드 ----
+  // 같은 격자를 재사용한다. 편집 중에는 weekFixed가 고정 시간 본체(state.fixed)를 가리킨다.
+
+  function setEditingFixed(on) {
+    endDrag();
+    editingFixed = on;
+    fixedToggleBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    fixedBannerEl.hidden = !on;
+    mineHintEl.hidden = on;
+    mineLegendEl.hidden = on;
+    fixedStatusEl.hidden = true;
+    clearShareOutput();
+    // 고정 시간은 특정 주와 상관없으므로 편집 중에는 주 이동과 코드 복사를 막는다.
+    weekPrevBtn.disabled = on;
+    weekNextBtn.disabled = on;
+    copyBtn.disabled = on;
+    if (on) {
+      weekFixed = stringSet(state.fixed);
+      renderGrid();
+      todayBtn.disabled = true;
+      return;
+    }
+    loadWeek();
+    render();
+    var key = currentWeekKey();
+    if (hasInput(key) && !sameList(fixedListFor(key), state.fixed)) {
+      fixedStatusEl.textContent = '이 주는 이미 입력한 주라서 바뀐 고정 시간이 적용되지 않습니다. 아직 입력하지 않은 주부터 적용됩니다.';
+      fixedStatusEl.hidden = false;
+    }
+  }
+
+  function sameList(a, b) {
+    return sortSlots(a).join(',') === sortSlots(b).join(',');
+  }
+
+  fixedToggleBtn.addEventListener('click', function () {
+    setEditingFixed(!editingFixed);
+  });
+  fixedDoneBtn.addEventListener('click', function () {
+    setEditingFixed(false);
+  });
+
   // ---- 화면 전환 (탭) ----
 
   function showScreen(which) {
     var team = which === 'team';
+    if (team && editingFixed) setEditingFixed(false);
     tabMine.setAttribute('aria-selected', team ? 'false' : 'true');
     tabTeam.setAttribute('aria-selected', team ? 'true' : 'false');
     screenMine.hidden = team;
@@ -634,15 +775,16 @@
     endDrag();
     clearShareOutput();
     showPasteResults([]);
+    fixedStatusEl.hidden = true;
     currentMonday = monday;
     loadWeek();
     render();
   }
 
-  document.getElementById('week-prev').addEventListener('click', function () {
+  weekPrevBtn.addEventListener('click', function () {
     goToWeek(addDays(currentMonday, -7));
   });
-  document.getElementById('week-next').addEventListener('click', function () {
+  weekNextBtn.addEventListener('click', function () {
     goToWeek(addDays(currentMonday, 7));
   });
   todayBtn.addEventListener('click', function () {

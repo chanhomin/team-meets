@@ -12,10 +12,17 @@
   --accent: #2f5fd0;
   --all: #2f5fd0;
   --all-ring: #f2b200;
+  --fixed: #b9bcc4;
+  --fixed-edit: #6b6f7a;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* display를 지정한 요소에도 hidden 속성이 항상 이기도록 한다. */
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -77,6 +84,60 @@ body {
   font-size: 17px;
 }
 
+.screen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.screen-head h2 {
+  margin: 0;
+}
+
+.toggle {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-hour);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toggle[aria-pressed="true"] {
+  background: var(--fixed-edit);
+  border-color: var(--fixed-edit);
+  color: #fff;
+}
+
+.fixed-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #ececf0;
+  font-size: 13px;
+}
+
+.fixed-status {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fff4e5;
+  color: #8a4b00;
+  font-size: 13px;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .week-nav {
   display: flex;
   align-items: center;
@@ -127,7 +188,8 @@ body {
 
 .legend {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 4px 16px;
   margin-bottom: 8px;
   font-size: 13px;
   color: var(--muted);
@@ -154,6 +216,17 @@ body {
 
 .swatch-off {
   background: var(--off);
+}
+
+.swatch-fixed {
+  background: var(--fixed);
+  border-color: var(--fixed);
+}
+
+.swatch-released {
+  background: var(--on);
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgba(255, 255, 255, 0.3) 3px 5px);
+  border: 2px solid var(--fixed-edit);
 }
 
 .grid-wrap {
@@ -214,12 +287,29 @@ body {
   background: var(--on);
 }
 
+.cell.fixed {
+  background: var(--fixed);
+}
+
+.cell.released {
+  background: var(--on);
+  box-shadow: inset 0 0 0 2px var(--fixed-edit);
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255, 255, 255, 0.25) 4px 6px);
+}
+
+.editing-fixed .cell.fixed {
+  background: var(--fixed-edit);
+}
+
 @media (hover: hover) {
   .cell:hover {
     background: var(--off-hover);
   }
   .cell.on:hover {
     background: var(--on-hover);
+  }
+  .cell.fixed:hover {
+    background: #a6a9b2;
   }
 }
 
@@ -282,10 +372,6 @@ body {
   background: var(--bg);
   resize: vertical;
   word-break: break-all;
-}
-
-.share-code[hidden] {
-  display: none;
 }
 
 .paste-label {

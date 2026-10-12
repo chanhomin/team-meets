@@ -26,14 +26,26 @@
     </div>
 
     <section class="screen" id="screen-mine" role="tabpanel" aria-labelledby="tab-mine">
-      <h2>내 가능시간</h2>
+      <div class="screen-head">
+        <h2>내 가능시간</h2>
+        <button type="button" id="fixed-toggle" class="toggle" aria-pressed="false">고정 시간 편집</button>
+      </div>
 
-      <p class="hint">가능한 시간을 누르거나 드래그해서 칠하세요. 칠한 칸을 다시 누르면 지워집니다.</p>
+      <div class="fixed-banner" id="fixed-banner" hidden>
+        <span>고정 시간 편집 중 · 매주 반복되는 불가 시간(수업 등)을 칠하세요. 아직 입력하지 않은 주부터 적용됩니다.</span>
+        <button type="button" id="fixed-done" class="primary">완료</button>
+      </div>
 
-      <div class="legend">
+      <p class="hint" id="mine-hint">가능한 시간을 누르거나 드래그해서 칠하세요. 칠한 칸을 다시 누르면 지워집니다. 회색 고정 칸을 누르면 이번 주만 풀 수 있습니다.</p>
+
+      <div class="legend" id="mine-legend">
         <span class="legend-item"><span class="swatch swatch-on"></span>가능</span>
         <span class="legend-item"><span class="swatch swatch-off"></span>불가</span>
+        <span class="legend-item"><span class="swatch swatch-fixed"></span>고정 불가</span>
+        <span class="legend-item"><span class="swatch swatch-released"></span>이번 주만 풂</span>
       </div>
+
+      <p class="fixed-status" id="fixed-status" role="status" hidden></p>
 
       <div class="grid-wrap">
         <div class="grid" id="grid" role="grid" aria-label="요일별 가능시간 격자"></div>
