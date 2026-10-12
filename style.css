@@ -458,12 +458,6 @@ button:disabled {
   cursor: pointer;
 }
 
-.heat-scale {
-  width: 48px;
-  background: linear-gradient(to right, rgba(47, 125, 91, 0.12), rgba(47, 125, 91, 0.85));
-  border-color: transparent;
-}
-
 .swatch-all {
   background: var(--all);
   border-color: var(--all);

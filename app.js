@@ -21,7 +21,7 @@
   var membersTitleEl = document.getElementById('members-title');
   var membersListEl = document.getElementById('members-list');
   var heatGridEl = document.getElementById('heat-grid');
-  var heatScaleLabelEl = document.getElementById('heat-scale-label');
+  var heatLegendEl = document.getElementById('heat-legend');
   var heatDetailEl = document.getElementById('heat-detail');
   var fixedToggleBtn = document.getElementById('fixed-toggle');
   var fixedBannerEl = document.getElementById('fixed-banner');
@@ -718,11 +718,46 @@
     });
   }
 
+  // 가능 인원 수마다 서로 다른 색을 쓴다. 파랑은 "전원 가능" 전용이라 목록에서 뺐다.
+  var COUNT_COLORS = ['#f4c430', '#f28e2b', '#59a14f', '#e15759', '#b07aa1', '#76b7b2', '#9c755f', '#ff9da7', '#bcbd22', '#8c564b'];
+
+  function countColor(count) {
+    if (count <= COUNT_COLORS.length) return COUNT_COLORS[count - 1];
+    // 목록보다 인원이 많으면 색상환을 돌며 만든다. 파랑 계열(190~250도)은 건너뛴다.
+    var hue = (count * 47) % 360;
+    if (hue >= 190 && hue <= 250) hue = (hue + 70) % 360;
+    return 'hsl(' + hue + ', 65%, 58%)';
+  }
+
+  function legendItem(swatchClass, color, text) {
+    var item = document.createElement('span');
+    item.className = 'legend-item';
+    var sw = document.createElement('span');
+    sw.className = 'swatch ' + swatchClass;
+    if (color) {
+      sw.style.background = color;
+      sw.style.borderColor = color;
+    }
+    item.appendChild(sw);
+    item.appendChild(document.createTextNode(text));
+    return item;
+  }
+
+  function renderHeatLegend(total) {
+    heatLegendEl.innerHTML = '';
+    heatLegendEl.appendChild(legendItem('swatch-off', null, '0명'));
+    var maxPartial = total >= 2 ? total - 1 : total;
+    for (var n = 1; n <= maxPartial; n++) {
+      heatLegendEl.appendChild(legendItem('', countColor(n), n + '명'));
+    }
+    if (total >= 2) heatLegendEl.appendChild(legendItem('swatch-all', null, '전원 가능 (' + total + '명)'));
+  }
+
   function renderTeam() {
     var members = teamMembers();
     var total = members.length;
     renderMembers(members);
-    heatScaleLabelEl.textContent = '가능 1명 → ' + total + '명';
+    renderHeatLegend(total);
 
     buildGrid(heatGridEl, function (cell, id) {
       var count = 0;
@@ -731,9 +766,8 @@
       if (total >= 2 && count === total) {
         cell.classList.add('all');
       } else if (count > 0) {
-        // 비율이 높을수록 진하게. 0명은 흰색 그대로 둔다.
-        var alpha = 0.12 + 0.73 * (count / total);
-        cell.style.background = 'rgba(47, 125, 91, ' + alpha.toFixed(3) + ')';
+        // 0명은 흰색 그대로 둔다.
+        cell.style.background = countColor(count);
       }
       cell.setAttribute('aria-label', cell.getAttribute('aria-label') + ', 가능 ' + count + '/' + total + '명');
     });
