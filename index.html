@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>팀플 회의시간 맞추기</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>팀플 회의시간 맞추기</h1>
+    </header>
+
+    <section class="screen" id="screen-mine" aria-labelledby="mine-title">
+      <h2 id="mine-title">내 가능시간</h2>
+
+      <div class="week-nav">
+        <button type="button" id="week-prev" aria-label="이전 주">◀ 이전 주</button>
+        <span class="week-label" id="week-label"></span>
+        <button type="button" id="week-next" aria-label="다음 주">다음 주 ▶</button>
+      </div>
+      <p class="week-today"><button type="button" id="week-today" class="link-button">이번 주로</button></p>
+
+      <p class="hint">가능한 시간을 누르거나 드래그해서 칠하세요. 칠한 칸을 다시 누르면 지워집니다.</p>
+
+      <div class="legend">
+        <span class="legend-item"><span class="swatch swatch-on"></span>가능</span>
+        <span class="legend-item"><span class="swatch swatch-off"></span>불가</span>
+      </div>
+
+      <div class="grid-wrap">
+        <div class="grid" id="grid" role="grid" aria-label="요일별 가능시간 격자"></div>
+      </div>
+
+      <p class="notice" id="notice" role="status" hidden></p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
