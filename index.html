@@ -33,6 +33,16 @@
         <div class="grid" id="grid" role="grid" aria-label="요일별 가능시간 격자"></div>
       </div>
 
+      <div class="share">
+        <label class="share-name">
+          <span>내 이름</span>
+          <input type="text" id="my-name" maxlength="20" autocomplete="off" placeholder="팀원이 알아볼 이름">
+        </label>
+        <button type="button" id="copy-code" class="primary">내 코드 복사</button>
+      </div>
+      <p class="share-status" id="share-status" role="status" hidden></p>
+      <textarea class="share-code" id="share-code" rows="3" readonly hidden aria-label="내 공유 코드"></textarea>
+
       <p class="notice" id="notice" role="status" hidden></p>
     </section>
   </main>

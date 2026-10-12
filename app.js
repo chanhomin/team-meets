@@ -7,6 +7,10 @@
   var weekLabelEl = document.getElementById('week-label');
   var todayBtn = document.getElementById('week-today');
   var noticeEl = document.getElementById('notice');
+  var nameInput = document.getElementById('my-name');
+  var copyBtn = document.getElementById('copy-code');
+  var shareStatusEl = document.getElementById('share-status');
+  var shareCodeEl = document.getElementById('share-code');
 
   // 기본 범위: 평일 9~23시, 30분 단위 (설정은 5단계에서 추가)
   var DAYS = [
@@ -21,7 +25,7 @@
   var STEP_MIN = 30;
 
   // ---- 저장소 ----
-  // 형식: { weeks: { "2026-10-12": ["mon-09:00", ...] } }
+  // 형식: { name: "홍길동", weeks: { "2026-10-12": ["mon-09:00", ...] } }
   // 슬롯은 칸 번호가 아니라 요일+시각으로 저장한다. 시간 범위가 바뀌어도 데이터가 유지되게 하기 위해서다.
 
   function emptyState() {
@@ -243,17 +247,120 @@
     if (!drag) return;
     var changed = drag.changed;
     drag = null;
-    if (changed) saveWeek();
+    if (changed) {
+      saveWeek();
+      clearShareOutput();
+    }
   }
 
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
   window.addEventListener('blur', endDrag);
 
+  // ---- 공유 코드 내보내기 ----
+  // 코드 = Base64(UTF-8(JSON {name, week, slots})). 한글 이름 때문에 UTF-8로 바꾼 뒤 Base64로 인코딩한다.
+
+  function encodeShareCode(obj) {
+    var bytes = new TextEncoder().encode(JSON.stringify(obj));
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
+  function buildMyCode(name) {
+    var slots = state.weeks[currentWeekKey()];
+    return encodeShareCode({
+      name: name,
+      week: currentWeekKey(),
+      slots: Array.isArray(slots) ? slots.slice() : []
+    });
+  }
+
+  function setShareStatus(msg, isError) {
+    shareStatusEl.textContent = msg;
+    shareStatusEl.classList.toggle('error', !!isError);
+    shareStatusEl.hidden = false;
+  }
+
+  function clearShareOutput() {
+    shareStatusEl.hidden = true;
+    shareCodeEl.hidden = true;
+    shareCodeEl.value = '';
+  }
+
+  // 클립보드 API가 막힌 환경(일부 브라우저의 file://)을 위해 execCommand로 한 번 더 시도한다.
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () {
+        return legacyCopy(text);
+      });
+    }
+    return legacyCopy(text);
+  }
+
+  function legacyCopy(text) {
+    return new Promise(function (resolve, reject) {
+      shareCodeEl.hidden = false;
+      shareCodeEl.value = text;
+      shareCodeEl.select();
+      var ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch (e) {
+        ok = false;
+      }
+      if (ok) resolve();
+      else reject(new Error('copy failed'));
+    });
+  }
+
+  nameInput.value = typeof state.name === 'string' ? state.name : '';
+
+  nameInput.addEventListener('change', function () {
+    state.name = nameInput.value.trim();
+    nameInput.value = state.name;
+    saveState();
+    clearShareOutput();
+  });
+
+  copyBtn.addEventListener('click', function () {
+    var name = nameInput.value.trim();
+    if (!name) {
+      setShareStatus('이름을 먼저 입력하세요. 팀원 화면에 이 이름으로 표시됩니다.', true);
+      nameInput.focus();
+      return;
+    }
+    if (name !== state.name) {
+      state.name = name;
+      saveState();
+    }
+
+    var code;
+    try {
+      code = buildMyCode(name);
+    } catch (e) {
+      setShareStatus('코드를 만들지 못했습니다.', true);
+      return;
+    }
+
+    shareCodeEl.value = code;
+    shareCodeEl.hidden = false;
+    var count = (state.weeks[currentWeekKey()] || []).length;
+    var weekText = weekLabelEl.textContent;
+
+    copyText(code).then(function () {
+      setShareStatus('복사했습니다 (' + weekText + ', 가능 ' + count + '칸). 단톡방에 붙여넣으세요.', false);
+    }, function () {
+      setShareStatus('자동 복사가 막혀 있습니다. 아래 코드를 직접 선택해서 복사하세요.', true);
+      shareCodeEl.select();
+    });
+  });
+
   // ---- 주 이동 ----
 
   function goToWeek(monday) {
     endDrag();
+    clearShareOutput();
     currentMonday = monday;
     loadWeek();
     render();
