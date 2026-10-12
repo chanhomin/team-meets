@@ -31,18 +31,31 @@
   var mineLegendEl = document.getElementById('mine-legend');
   var weekPrevBtn = document.getElementById('week-prev');
   var weekNextBtn = document.getElementById('week-next');
+  var weekBarEl = document.getElementById('week-bar');
+  var tabSettings = document.getElementById('tab-settings');
+  var screenSettings = document.getElementById('screen-settings');
+  var settingsNameInput = document.getElementById('settings-name');
+  var startHourSel = document.getElementById('start-hour');
+  var endHourSel = document.getElementById('end-hour');
+  var weekendChk = document.getElementById('weekend');
+  var settingsStatusEl = document.getElementById('settings-status');
 
-  // 기본 범위: 평일 9~23시, 30분 단위 (설정은 5단계에서 추가)
-  var DAYS = [
+  var ALL_DAYS = [
     { key: 'mon', label: '월' },
     { key: 'tue', label: '화' },
     { key: 'wed', label: '수' },
     { key: 'thu', label: '목' },
-    { key: 'fri', label: '금' }
+    { key: 'fri', label: '금' },
+    { key: 'sat', label: '토' },
+    { key: 'sun', label: '일' }
   ];
-  var START_HOUR = 9;
-  var END_HOUR = 23;
   var STEP_MIN = 30;
+  var DEFAULT_SETTINGS = { startHour: 9, endHour: 23, weekend: false };
+
+  // 격자에 보이는 요일·시각. 설정에 따라 applySettings()가 다시 계산한다.
+  var DAYS = [];
+  var TIMES = [];
+  var GRID_IDS = {};
 
   // ---- 저장소 ----
   // 형식: {
@@ -51,14 +64,15 @@
   //   team:  { "2026-10-12": { "김팀원": ["mon-09:00", ...] } } 붙여넣은 팀원 코드 (주별, 이름별)
   //   fixed: ["tue-10:00", ...],                              고정 시간 본체 (매주 반복되는 불가 시간)
   //   weekFixed: { "2026-10-12": ["tue-10:00", ...] },        그 주에 처음 입력할 때 복사해 둔 고정 시간
-  //   released:  { "2026-10-12": ["tue-10:00", ...] }         그 주에만 푼 고정 칸 (= 그 주만 가능)
+  //   released:  { "2026-10-12": ["tue-10:00", ...] },        그 주에만 푼 고정 칸 (= 그 주만 가능)
+  //   settings:  { startHour: 9, endHour: 23, weekend: false } 하루 시작·끝 시각, 주말 포함
   // }
   // 고정 시간 적용(B안): 입력이 없는 주는 현재 고정 시간을 보여주고, 그 주에 처음 입력하는 순간
   // 고정 시간을 weekFixed에 복사한다. 이후 고정 시간 본체를 바꿔도 이미 입력한 주는 바뀌지 않는다.
   // 슬롯은 칸 번호가 아니라 요일+시각으로 저장한다. 시간 범위가 바뀌어도 데이터가 유지되게 하기 위해서다.
 
   function emptyState() {
-    return { weeks: {}, team: {}, fixed: [], weekFixed: {}, released: {} };
+    return { weeks: {}, team: {}, fixed: [], weekFixed: {}, released: {}, settings: cleanSettings(null) };
   }
 
   function loadState() {
@@ -73,11 +87,24 @@
       if (!Array.isArray(parsed.fixed)) parsed.fixed = [];
       if (!isPlainObject(parsed.weekFixed)) parsed.weekFixed = {};
       if (!isPlainObject(parsed.released)) parsed.released = {};
+      parsed.settings = cleanSettings(parsed.settings);
       return parsed;
     } catch (e) {
       showNotice('저장된 데이터를 읽지 못했습니다. 빈 상태로 시작합니다.');
       return emptyState();
     }
+  }
+
+  // 잘못된 설정값은 항목별로 기본값으로 되돌린다.
+  function cleanSettings(raw) {
+    var src = isPlainObject(raw) ? raw : {};
+    var start = Number.isInteger(src.startHour) && src.startHour >= 0 && src.startHour <= 23 ? src.startHour : DEFAULT_SETTINGS.startHour;
+    var end = Number.isInteger(src.endHour) && src.endHour >= 1 && src.endHour <= 24 ? src.endHour : DEFAULT_SETTINGS.endHour;
+    if (start >= end) {
+      start = DEFAULT_SETTINGS.startHour;
+      end = DEFAULT_SETTINGS.endHour;
+    }
+    return { startHour: start, endHour: end, weekend: src.weekend === true };
   }
 
   function isPlainObject(v) {
@@ -123,15 +150,23 @@
 
   // ---- 슬롯 ----
 
-  function timeSlots() {
+  function timeSlots(startHour, endHour) {
     var list = [];
-    for (var m = START_HOUR * 60; m < END_HOUR * 60; m += STEP_MIN) {
+    for (var m = startHour * 60; m < endHour * 60; m += STEP_MIN) {
       list.push(pad2(Math.floor(m / 60)) + ':' + pad2(m % 60));
     }
     return list;
   }
 
-  var TIMES = timeSlots();
+  function applySettings() {
+    var st = state.settings;
+    DAYS = st.weekend ? ALL_DAYS.slice() : ALL_DAYS.slice(0, 5);
+    TIMES = timeSlots(st.startHour, st.endHour);
+    GRID_IDS = {};
+    DAYS.forEach(function (day) {
+      TIMES.forEach(function (t) { GRID_IDS[slotId(day.key, t)] = true; });
+    });
+  }
 
   function slotId(dayKey, time) {
     return dayKey + '-' + time;
@@ -145,6 +180,7 @@
   var weekFixed = {};  // 현재 주에 적용되는 고정 칸 집합
   var released = {};   // 현재 주에만 푼 고정 칸 집합
   var editingFixed = false;
+  applySettings();
 
   function currentWeekKey() {
     return weekKeyOf(currentMonday);
@@ -173,6 +209,7 @@
   }
 
   // 공유 코드와 팀 겹침에 쓰는 실제 가능 슬롯 = 칠한 칸(고정 칸 제외) + 그 주에 푼 고정 칸
+  // 설정 범위 밖으로 숨겨진 칸은 저장만 해 두고 여기서는 뺀다 (보이는 범위만 보낸다).
   function effectiveSlots(weekKey) {
     var fixedSet = stringSet(fixedListFor(weekKey));
     var rel = stringSet(state.released[weekKey]);
@@ -184,7 +221,7 @@
     Object.keys(rel).forEach(function (id) {
       if (fixedSet[id]) result[id] = true;
     });
-    return sortSlots(Object.keys(result));
+    return sortSlots(Object.keys(result)).filter(isInGrid);
   }
 
   function loadWeek() {
@@ -222,11 +259,6 @@
     saveState();
   }
 
-  var GRID_IDS = {};
-  DAYS.forEach(function (day) {
-    TIMES.forEach(function (t) { GRID_IDS[slotId(day.key, t)] = true; });
-  });
-
   function isInGrid(id) {
     return GRID_IDS[id] === true;
   }
@@ -240,10 +272,10 @@
   }
 
   function renderWeekLabel() {
-    var friday = addDays(currentMonday, DAYS.length - 1);
+    var lastDay = addDays(currentMonday, DAYS.length - 1);
     weekLabelEl.textContent =
       currentMonday.getFullYear() + '년 ' + (currentMonday.getMonth() + 1) + '월 ' + currentMonday.getDate() + '일 ~ ' +
-      (friday.getMonth() + 1) + '월 ' + friday.getDate() + '일';
+      (lastDay.getMonth() + 1) + '월 ' + lastDay.getDate() + '일';
     todayBtn.disabled = currentWeekKey() === weekKeyOf(mondayOf(new Date()));
   }
 
@@ -439,14 +471,24 @@
     });
   }
 
-  nameInput.value = typeof state.name === 'string' ? state.name : '';
-
-  nameInput.addEventListener('change', function () {
-    state.name = nameInput.value.trim();
-    nameInput.value = state.name;
+  // 이름 입력칸은 화면 1과 설정 화면에 하나씩 있고 같은 값을 쓴다.
+  function setName(name) {
+    state.name = name;
+    nameInput.value = name;
+    settingsNameInput.value = name;
     saveState();
     clearShareOutput();
     renderTeam();
+  }
+
+  nameInput.value = typeof state.name === 'string' ? state.name : '';
+  settingsNameInput.value = nameInput.value;
+
+  nameInput.addEventListener('change', function () {
+    setName(nameInput.value.trim());
+  });
+  settingsNameInput.addEventListener('change', function () {
+    setName(settingsNameInput.value.trim());
   });
 
   copyBtn.addEventListener('click', function () {
@@ -456,10 +498,7 @@
       nameInput.focus();
       return;
     }
-    if (name !== state.name) {
-      state.name = name;
-      saveState();
-    }
+    if (name !== state.name) setName(name);
 
     var code;
     try {
@@ -618,7 +657,7 @@
   }
 
   function slotTitle(id) {
-    var day = DAYS.filter(function (d) { return d.key === id.slice(0, 3); })[0];
+    var day = ALL_DAYS.filter(function (d) { return d.key === id.slice(0, 3); })[0];
     var start = id.slice(4);
     var m = Number(start.slice(0, 2)) * 60 + Number(start.slice(3)) + STEP_MIN;
     var end = pad2(Math.floor(m / 60)) + ':' + pad2(m % 60);
@@ -757,17 +796,71 @@
   // ---- 화면 전환 (탭) ----
 
   function showScreen(which) {
-    var team = which === 'team';
-    if (team && editingFixed) setEditingFixed(false);
-    tabMine.setAttribute('aria-selected', team ? 'false' : 'true');
-    tabTeam.setAttribute('aria-selected', team ? 'true' : 'false');
-    screenMine.hidden = team;
-    screenTeam.hidden = !team;
-    if (team) renderTeam();
+    if (which !== 'mine' && editingFixed) setEditingFixed(false);
+    tabMine.setAttribute('aria-selected', which === 'mine' ? 'true' : 'false');
+    tabTeam.setAttribute('aria-selected', which === 'team' ? 'true' : 'false');
+    tabSettings.setAttribute('aria-selected', which === 'settings' ? 'true' : 'false');
+    screenMine.hidden = which !== 'mine';
+    screenTeam.hidden = which !== 'team';
+    screenSettings.hidden = which !== 'settings';
+    // 설정은 특정 주와 상관없으므로 주 선택을 숨긴다.
+    weekBarEl.hidden = which === 'settings';
+    if (which === 'team') renderTeam();
+    if (which === 'settings') {
+      // 저장하지 못한 선택이 남아 있지 않도록 저장된 값으로 다시 맞춘다.
+      showSettings();
+      settingsStatusEl.hidden = true;
+    }
   }
 
   tabMine.addEventListener('click', function () { showScreen('mine'); });
   tabTeam.addEventListener('click', function () { showScreen('team'); });
+  tabSettings.addEventListener('click', function () { showScreen('settings'); });
+
+  // ---- 설정 ----
+  // 슬롯은 요일+시각으로 저장되어 있으므로 범위를 바꿔도 저장된 데이터는 그대로 두고 보이는 격자만 바꾼다.
+
+  function fillHourOptions(select, from, to) {
+    for (var h = from; h <= to; h++) {
+      var opt = document.createElement('option');
+      opt.value = String(h);
+      opt.textContent = h + ':00';
+      select.appendChild(opt);
+    }
+  }
+
+  function showSettings() {
+    startHourSel.value = String(state.settings.startHour);
+    endHourSel.value = String(state.settings.endHour);
+    weekendChk.checked = state.settings.weekend;
+  }
+
+  function onSettingsChange() {
+    var start = Number(startHourSel.value);
+    var end = Number(endHourSel.value);
+    if (start >= end) {
+      settingsStatusEl.textContent = '끝 시각은 시작 시각보다 늦어야 합니다. 저장하지 않았습니다.';
+      settingsStatusEl.className = 'settings-status error';
+      settingsStatusEl.hidden = false;
+      return;
+    }
+    state.settings = { startHour: start, endHour: end, weekend: weekendChk.checked };
+    saveState();
+    applySettings();
+    loadWeek();
+    clearShareOutput();
+    render();
+    settingsStatusEl.textContent = '저장했습니다. ' + (state.settings.weekend ? '월~일' : '월~금') + ' ' + start + ':00~' + end + ':00';
+    settingsStatusEl.className = 'settings-status';
+    settingsStatusEl.hidden = false;
+  }
+
+  fillHourOptions(startHourSel, 0, 23);
+  fillHourOptions(endHourSel, 1, 24);
+  showSettings();
+  startHourSel.addEventListener('change', onSettingsChange);
+  endHourSel.addEventListener('change', onSettingsChange);
+  weekendChk.addEventListener('change', onSettingsChange);
 
   // ---- 주 이동 ----
 

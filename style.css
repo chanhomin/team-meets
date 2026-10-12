@@ -498,6 +498,61 @@ button:disabled {
   display: block;
 }
 
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field input,
+.hour-range select {
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  padding: 7px 10px;
+  border: 1px solid var(--line-hour);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.hour-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.check input {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-status {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--on);
+}
+
+.settings-status.error {
+  color: #b42318;
+}
+
 .notice {
   margin: 12px 0 0;
   padding: 8px 10px;

@@ -13,10 +13,11 @@
       <nav class="tabs" role="tablist" aria-label="화면 선택">
         <button type="button" role="tab" id="tab-mine" aria-controls="screen-mine" aria-selected="true">내 가능시간</button>
         <button type="button" role="tab" id="tab-team" aria-controls="screen-team" aria-selected="false">팀 겹침 보기</button>
+        <button type="button" role="tab" id="tab-settings" aria-controls="screen-settings" aria-selected="false">설정</button>
       </nav>
     </header>
 
-    <div class="week-bar">
+    <div class="week-bar" id="week-bar">
       <div class="week-nav">
         <button type="button" id="week-prev" aria-label="이전 주">◀ 이전 주</button>
         <span class="week-label" id="week-label"></span>
@@ -87,6 +88,35 @@
       </div>
 
       <p class="heat-detail" id="heat-detail" aria-live="polite">칸을 가리키거나 누르면 가능/불가 명단이 보입니다.</p>
+    </section>
+
+    <section class="screen" id="screen-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <h2>설정</h2>
+
+      <div class="settings">
+        <label class="field">
+          <span>내 이름</span>
+          <input type="text" id="settings-name" maxlength="20" autocomplete="off" placeholder="팀원이 알아볼 이름">
+        </label>
+
+        <div class="field">
+          <span>하루 시간 범위</span>
+          <div class="hour-range">
+            <select id="start-hour" aria-label="시작 시각"></select>
+            <span>부터</span>
+            <select id="end-hour" aria-label="끝 시각"></select>
+            <span>까지</span>
+          </div>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="weekend">
+          <span>주말(토·일) 포함</span>
+        </label>
+      </div>
+
+      <p class="hint">범위 밖으로 숨겨진 칸은 지워지지 않고 보관됩니다. 공유 코드와 팀 겹침에는 지금 보이는 범위만 들어갑니다.</p>
+      <p class="settings-status" id="settings-status" role="status" hidden></p>
     </section>
 
     <p class="notice" id="notice" role="status" hidden></p>
