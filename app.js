@@ -11,6 +11,18 @@
   var copyBtn = document.getElementById('copy-code');
   var shareStatusEl = document.getElementById('share-status');
   var shareCodeEl = document.getElementById('share-code');
+  var tabMine = document.getElementById('tab-mine');
+  var tabTeam = document.getElementById('tab-team');
+  var screenMine = document.getElementById('screen-mine');
+  var screenTeam = document.getElementById('screen-team');
+  var pasteInput = document.getElementById('paste-input');
+  var pasteAddBtn = document.getElementById('paste-add');
+  var pasteResultsEl = document.getElementById('paste-results');
+  var membersTitleEl = document.getElementById('members-title');
+  var membersListEl = document.getElementById('members-list');
+  var heatGridEl = document.getElementById('heat-grid');
+  var heatScaleLabelEl = document.getElementById('heat-scale-label');
+  var heatDetailEl = document.getElementById('heat-detail');
 
   // 기본 범위: 평일 9~23시, 30분 단위 (설정은 5단계에서 추가)
   var DAYS = [
@@ -25,11 +37,15 @@
   var STEP_MIN = 30;
 
   // ---- 저장소 ----
-  // 형식: { name: "홍길동", weeks: { "2026-10-12": ["mon-09:00", ...] } }
+  // 형식: {
+  //   name: "홍길동",
+  //   weeks: { "2026-10-12": ["mon-09:00", ...] },          내 주별 가능시간
+  //   team:  { "2026-10-12": { "김팀원": ["mon-09:00", ...] } } 붙여넣은 팀원 코드 (주별, 이름별)
+  // }
   // 슬롯은 칸 번호가 아니라 요일+시각으로 저장한다. 시간 범위가 바뀌어도 데이터가 유지되게 하기 위해서다.
 
   function emptyState() {
-    return { weeks: {} };
+    return { weeks: {}, team: {} };
   }
 
   function loadState() {
@@ -40,6 +56,7 @@
       if (!parsed || typeof parsed !== 'object' || !parsed.weeks || typeof parsed.weeks !== 'object') {
         return emptyState();
       }
+      if (!parsed.team || typeof parsed.team !== 'object' || Array.isArray(parsed.team)) parsed.team = {};
       return parsed;
     } catch (e) {
       showNotice('저장된 데이터를 읽지 못했습니다. 빈 상태로 시작합니다.');
@@ -160,13 +177,14 @@
     todayBtn.disabled = currentWeekKey() === weekKeyOf(mondayOf(new Date()));
   }
 
-  function renderGrid() {
-    gridEl.innerHTML = '';
-    gridEl.style.setProperty('--day-count', DAYS.length);
+  // 내 격자와 히트맵이 같은 격자 구조를 쓴다. decorate(cell, id)로 칸별 표시만 다르게 한다.
+  function buildGrid(container, decorate) {
+    container.innerHTML = '';
+    container.style.setProperty('--day-count', DAYS.length);
 
     var corner = document.createElement('div');
     corner.className = 'grid-head';
-    gridEl.appendChild(corner);
+    container.appendChild(corner);
 
     DAYS.forEach(function (day, i) {
       var head = document.createElement('div');
@@ -176,14 +194,14 @@
       var sub = document.createElement('small');
       sub.textContent = shortDate(addDays(currentMonday, i));
       head.appendChild(sub);
-      gridEl.appendChild(head);
+      container.appendChild(head);
     });
 
     TIMES.forEach(function (t, row) {
       var label = document.createElement('div');
       label.className = 'time-label';
       label.textContent = t.slice(3) === '00' ? String(Number(t.slice(0, 2))) + ':00' : '';
-      gridEl.appendChild(label);
+      container.appendChild(label);
 
       DAYS.forEach(function (day, col) {
         var id = slotId(day.key, t);
@@ -191,19 +209,26 @@
         cell.className = 'cell';
         if (row % 2 === 1) cell.classList.add('hour-end');
         if (col === DAYS.length - 1) cell.classList.add('last-col');
-        if (selected[id]) cell.classList.add('on');
         cell.dataset.slot = id;
         cell.setAttribute('role', 'gridcell');
         cell.setAttribute('aria-label', day.label + '요일 ' + t);
-        cell.setAttribute('aria-selected', selected[id] ? 'true' : 'false');
-        gridEl.appendChild(cell);
+        decorate(cell, id);
+        container.appendChild(cell);
       });
+    });
+  }
+
+  function renderGrid() {
+    buildGrid(gridEl, function (cell, id) {
+      if (selected[id]) cell.classList.add('on');
+      cell.setAttribute('aria-selected', selected[id] ? 'true' : 'false');
     });
   }
 
   function render() {
     renderWeekLabel();
     renderGrid();
+    renderTeam();
   }
 
   // ---- 드래그 칠하기 (마우스·터치 공통, Pointer Events) ----
@@ -250,6 +275,7 @@
     if (changed) {
       saveWeek();
       clearShareOutput();
+      renderTeam();
     }
   }
 
@@ -321,6 +347,7 @@
     nameInput.value = state.name;
     saveState();
     clearShareOutput();
+    renderTeam();
   });
 
   copyBtn.addEventListener('click', function () {
@@ -356,11 +383,257 @@
     });
   });
 
+  // ---- 팀원 코드 붙여넣기 ----
+
+  var WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;
+  var SLOT_RE = /^(mon|tue|wed|thu|fri|sat|sun)-([01]\d|2[0-3]):[0-5]\d$/;
+  var MAX_NAME = 20;
+  var MAX_SLOTS = 7 * 48;
+
+  // 잘못된 코드면 Error를 던진다. 호출하는 쪽에서 잡아서 안내만 보여준다.
+  function decodeShareCode(text) {
+    var bin = atob(text);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    var obj = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (!obj || typeof obj !== 'object') throw new Error('형식 오류');
+    var name = typeof obj.name === 'string' ? obj.name.trim() : '';
+    if (!name || name.length > MAX_NAME) throw new Error('이름 오류');
+    if (typeof obj.week !== 'string' || !WEEK_RE.test(obj.week)) throw new Error('주 오류');
+    if (!Array.isArray(obj.slots) || obj.slots.length > MAX_SLOTS) throw new Error('슬롯 오류');
+    var seen = {};
+    var slots = [];
+    obj.slots.forEach(function (id) {
+      if (typeof id !== 'string' || !SLOT_RE.test(id)) throw new Error('슬롯 오류');
+      if (!seen[id]) {
+        seen[id] = true;
+        slots.push(id);
+      }
+    });
+    return { name: name, week: obj.week, slots: slots };
+  }
+
+  function weekTitle(weekKey) {
+    var p = weekKey.split('-');
+    return Number(p[1]) + '/' + Number(p[2]) + ' 주';
+  }
+
+  function shortCode(code) {
+    return code.length > 12 ? code.slice(0, 12) + '…' : code;
+  }
+
+  function teamOfWeek() {
+    var t = state.team[currentWeekKey()];
+    return t && typeof t === 'object' && !Array.isArray(t) ? t : {};
+  }
+
+  function myName() {
+    return typeof state.name === 'string' ? state.name : '';
+  }
+
+  function addCodes(text) {
+    var codes = text.split(/\s+/).filter(function (c) { return c.length > 0; });
+    var results = [];
+    if (codes.length === 0) {
+      results.push({ ok: false, text: '붙여넣은 코드가 없습니다.' });
+      return results;
+    }
+    var week = currentWeekKey();
+    var team = teamOfWeek();
+    var changed = false;
+
+    codes.forEach(function (code) {
+      var data;
+      try {
+        data = decodeShareCode(code);
+      } catch (e) {
+        results.push({ ok: false, text: '올바른 코드가 아닙니다: ' + shortCode(code) });
+        return;
+      }
+      if (data.week !== week) {
+        results.push({ ok: false, text: '무시: ' + data.name + '님의 코드는 ' + weekTitle(data.week) + ' 코드입니다. 지금 보는 주는 ' + weekTitle(week) + '입니다.' });
+        return;
+      }
+      if (myName() && data.name === myName()) {
+        results.push({ ok: false, text: '무시: 내 이름(' + data.name + ')과 같은 코드입니다. 내 시간은 자동으로 포함됩니다.' });
+        return;
+      }
+      var existed = Object.prototype.hasOwnProperty.call(team, data.name);
+      team[data.name] = data.slots;
+      changed = true;
+      results.push({ ok: true, text: (existed ? '덮어씀: ' : '추가됨: ') + data.name + ' (가능 ' + data.slots.length + '칸)' });
+    });
+
+    if (changed) {
+      state.team[week] = team;
+      saveState();
+    }
+    return results;
+  }
+
+  function showPasteResults(results) {
+    pasteResultsEl.innerHTML = '';
+    results.forEach(function (r) {
+      var li = document.createElement('li');
+      li.className = r.ok ? 'ok' : 'bad';
+      li.textContent = r.text;
+      pasteResultsEl.appendChild(li);
+    });
+    pasteResultsEl.hidden = results.length === 0;
+  }
+
+  function removeMember(name) {
+    var team = teamOfWeek();
+    delete team[name];
+    state.team[currentWeekKey()] = team;
+    saveState();
+    showPasteResults([]);
+    renderTeam();
+  }
+
+  pasteAddBtn.addEventListener('click', function () {
+    var results = addCodes(pasteInput.value);
+    showPasteResults(results);
+    if (results.some(function (r) { return r.ok; })) pasteInput.value = '';
+    renderTeam();
+  });
+
+  // ---- 겹침 히트맵 ----
+  // 나(1단계에서 칠한 시간)는 자동으로 포함한다.
+
+  function teamMembers() {
+    var members = [];
+    var mine = state.weeks[currentWeekKey()];
+    members.push({ name: myName() || '나', me: true, slots: toSet(Array.isArray(mine) ? mine : []) });
+    var team = teamOfWeek();
+    Object.keys(team).sort(function (a, b) { return a.localeCompare(b, 'ko'); }).forEach(function (name) {
+      if (name === myName()) return;
+      members.push({ name: name, me: false, slots: toSet(Array.isArray(team[name]) ? team[name] : []) });
+    });
+    return members;
+  }
+
+  function toSet(list) {
+    var set = {};
+    list.forEach(function (id) { set[id] = true; });
+    return set;
+  }
+
+  function slotTitle(id) {
+    var day = DAYS.filter(function (d) { return d.key === id.slice(0, 3); })[0];
+    var start = id.slice(4);
+    var m = Number(start.slice(0, 2)) * 60 + Number(start.slice(3)) + STEP_MIN;
+    var end = pad2(Math.floor(m / 60)) + ':' + pad2(m % 60);
+    return (day ? day.label + ' ' : '') + start + '~' + end;
+  }
+
+  var activeHeatCell = null;
+
+  function showHeatDetail(cell) {
+    if (!cell || !cell.dataset.slot) return;
+    if (activeHeatCell) activeHeatCell.classList.remove('active');
+    activeHeatCell = cell;
+    cell.classList.add('active');
+
+    var id = cell.dataset.slot;
+    var members = teamMembers();
+    var yes = [];
+    var no = [];
+    members.forEach(function (m) {
+      var label = m.me ? m.name + '(나)' : m.name;
+      (m.slots[id] ? yes : no).push(label);
+    });
+
+    heatDetailEl.innerHTML = '';
+    var title = document.createElement('strong');
+    title.textContent = slotTitle(id) + ' · 가능 ' + yes.length + '/' + members.length + '명' +
+      (members.length >= 2 && no.length === 0 ? ' · 전원 가능' : '');
+    heatDetailEl.appendChild(title);
+    heatDetailEl.appendChild(document.createTextNode('가능: ' + (yes.length ? yes.join(', ') : '없음')));
+    heatDetailEl.appendChild(document.createElement('br'));
+    heatDetailEl.appendChild(document.createTextNode('불가: ' + (no.length ? no.join(', ') : '없음')));
+  }
+
+  function resetHeatDetail() {
+    activeHeatCell = null;
+    heatDetailEl.textContent = '칸을 가리키거나 누르면 가능/불가 명단이 보입니다.';
+  }
+
+  function renderMembers(members) {
+    membersTitleEl.textContent = '응답자 ' + members.length + '명' +
+      (members.length < 2 ? ' · 팀원 코드를 붙여넣으면 겹치는 시간이 보입니다.' : '');
+    membersListEl.innerHTML = '';
+    members.forEach(function (m) {
+      var li = document.createElement('li');
+      if (m.me) {
+        li.className = 'me';
+        li.textContent = m.name + '(나)';
+      } else {
+        li.appendChild(document.createTextNode(m.name));
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '삭제';
+        del.setAttribute('aria-label', m.name + ' 삭제');
+        del.addEventListener('click', function () { removeMember(m.name); });
+        li.appendChild(del);
+      }
+      membersListEl.appendChild(li);
+    });
+  }
+
+  function renderTeam() {
+    var members = teamMembers();
+    var total = members.length;
+    renderMembers(members);
+    heatScaleLabelEl.textContent = '가능 1명 → ' + total + '명';
+
+    buildGrid(heatGridEl, function (cell, id) {
+      var count = 0;
+      members.forEach(function (m) { if (m.slots[id]) count++; });
+      cell.dataset.count = String(count);
+      if (total >= 2 && count === total) {
+        cell.classList.add('all');
+      } else if (count > 0) {
+        // 비율이 높을수록 진하게. 0명은 흰색 그대로 둔다.
+        var alpha = 0.12 + 0.73 * (count / total);
+        cell.style.background = 'rgba(47, 125, 91, ' + alpha.toFixed(3) + ')';
+      }
+      cell.setAttribute('aria-label', cell.getAttribute('aria-label') + ', 가능 ' + count + '/' + total + '명');
+    });
+    resetHeatDetail();
+  }
+
+  heatGridEl.addEventListener('pointerover', function (e) {
+    if (e.pointerType !== 'mouse') return;
+    var cell = e.target.closest ? e.target.closest('.cell') : null;
+    if (cell) showHeatDetail(cell);
+  });
+
+  heatGridEl.addEventListener('click', function (e) {
+    var cell = e.target.closest ? e.target.closest('.cell') : null;
+    if (cell) showHeatDetail(cell);
+  });
+
+  // ---- 화면 전환 (탭) ----
+
+  function showScreen(which) {
+    var team = which === 'team';
+    tabMine.setAttribute('aria-selected', team ? 'false' : 'true');
+    tabTeam.setAttribute('aria-selected', team ? 'true' : 'false');
+    screenMine.hidden = team;
+    screenTeam.hidden = !team;
+    if (team) renderTeam();
+  }
+
+  tabMine.addEventListener('click', function () { showScreen('mine'); });
+  tabTeam.addEventListener('click', function () { showScreen('team'); });
+
   // ---- 주 이동 ----
 
   function goToWeek(monday) {
     endDrag();
     clearShareOutput();
+    showPasteResults([]);
     currentMonday = monday;
     loadWeek();
     render();

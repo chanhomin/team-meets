@@ -10,17 +10,23 @@
   <main class="app">
     <header class="app-header">
       <h1>팀플 회의시간 맞추기</h1>
+      <nav class="tabs" role="tablist" aria-label="화면 선택">
+        <button type="button" role="tab" id="tab-mine" aria-controls="screen-mine" aria-selected="true">내 가능시간</button>
+        <button type="button" role="tab" id="tab-team" aria-controls="screen-team" aria-selected="false">팀 겹침 보기</button>
+      </nav>
     </header>
 
-    <section class="screen" id="screen-mine" aria-labelledby="mine-title">
-      <h2 id="mine-title">내 가능시간</h2>
-
+    <div class="week-bar">
       <div class="week-nav">
         <button type="button" id="week-prev" aria-label="이전 주">◀ 이전 주</button>
         <span class="week-label" id="week-label"></span>
         <button type="button" id="week-next" aria-label="다음 주">다음 주 ▶</button>
       </div>
       <p class="week-today"><button type="button" id="week-today" class="link-button">이번 주로</button></p>
+    </div>
+
+    <section class="screen" id="screen-mine" role="tabpanel" aria-labelledby="tab-mine">
+      <h2>내 가능시간</h2>
 
       <p class="hint">가능한 시간을 누르거나 드래그해서 칠하세요. 칠한 칸을 다시 누르면 지워집니다.</p>
 
@@ -42,9 +48,36 @@
       </div>
       <p class="share-status" id="share-status" role="status" hidden></p>
       <textarea class="share-code" id="share-code" rows="3" readonly hidden aria-label="내 공유 코드"></textarea>
-
-      <p class="notice" id="notice" role="status" hidden></p>
     </section>
+
+    <section class="screen" id="screen-team" role="tabpanel" aria-labelledby="tab-team" hidden>
+      <h2>팀 겹침 보기</h2>
+
+      <label class="paste-label" for="paste-input">팀원 코드 붙여넣기 <small>(여러 개는 줄을 바꿔서)</small></label>
+      <textarea class="paste-input" id="paste-input" rows="3" placeholder="단톡방에서 받은 코드를 붙여넣으세요"></textarea>
+      <div class="paste-actions">
+        <button type="button" id="paste-add" class="primary">추가</button>
+      </div>
+      <ul class="paste-results" id="paste-results" role="status" hidden></ul>
+
+      <div class="members">
+        <p class="members-title" id="members-title"></p>
+        <ul class="members-list" id="members-list"></ul>
+      </div>
+
+      <div class="legend" id="heat-legend">
+        <span class="legend-item"><span class="swatch heat-scale"></span><span id="heat-scale-label">가능 인원 적음 → 많음</span></span>
+        <span class="legend-item"><span class="swatch swatch-all"></span>전원 가능</span>
+      </div>
+
+      <div class="grid-wrap">
+        <div class="grid heat" id="heat-grid" role="grid" aria-label="팀 겹침 히트맵"></div>
+      </div>
+
+      <p class="heat-detail" id="heat-detail" aria-live="polite">칸을 가리키거나 누르면 가능/불가 명단이 보입니다.</p>
+    </section>
+
+    <p class="notice" id="notice" role="status" hidden></p>
   </main>
 
   <script src="app.js"></script>
